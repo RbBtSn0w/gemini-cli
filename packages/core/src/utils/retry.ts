@@ -59,6 +59,7 @@ const RETRYABLE_NETWORK_CODES = [
   'ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC',
   'ERR_SSL_BAD_RECORD_MAC',
   'EPROTO', // Generic protocol error (often SSL-related)
+  'ERR_STREAM_PREMATURE_CLOSE', // Stream closed prematurely
 ];
 
 function getNetworkErrorCode(error: unknown): string | undefined {

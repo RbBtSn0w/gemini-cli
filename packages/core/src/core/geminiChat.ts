@@ -377,8 +377,8 @@ export class GeminiChat {
               signal,
               role,
             );
-            isConnectionPhase = false;
             for await (const chunk of stream) {
+              isConnectionPhase = false;
               yield { type: StreamEventType.CHUNK, value: chunk };
             }
 

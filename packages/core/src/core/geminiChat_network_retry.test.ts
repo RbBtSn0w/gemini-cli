@@ -338,7 +338,7 @@ describe('GeminiChat Network Retries', () => {
       await vi.importActual<typeof import('../utils/retry.js')>(
         '../utils/retry.js',
       );
-    mockRetryWithBackoff.mockImplementation(retryWithBackoff);
+    mockRetryWithBackoff.mockImplementation((fn, opts) => retryWithBackoff(fn, { ...opts, initialDelayMs: 1, maxDelayMs: 1 }));
 
     const stream = await chat.sendMessageStream(
       { model: 'test-model' },
@@ -373,7 +373,7 @@ describe('GeminiChat Network Retries', () => {
       await vi.importActual<typeof import('../utils/retry.js')>(
         '../utils/retry.js',
       );
-    mockRetryWithBackoff.mockImplementation(retryWithBackoff);
+    mockRetryWithBackoff.mockImplementation((fn, opts) => retryWithBackoff(fn, { ...opts, initialDelayMs: 1, maxDelayMs: 1 }));
 
     vi.mocked(mockContentGenerator.generateContentStream)
       .mockRejectedValueOnce(connectionError)
@@ -439,6 +439,56 @@ describe('GeminiChat Network Retries', () => {
     // Should only be called once (no retry)
     expect(mockContentGenerator.generateContentStream).toHaveBeenCalledTimes(1);
     expect(mockLogContentRetryFailure).not.toHaveBeenCalled();
+  });
+
+
+  it('should retry on ERR_STREAM_PREMATURE_CLOSE error during stream iteration', async () => {
+    const error = new Error('Premature close');
+    (error as any).code = 'ERR_STREAM_PREMATURE_CLOSE';
+
+    vi.mocked(mockContentGenerator.generateContentStream)
+      .mockImplementationOnce(async () =>
+        (async function* () {
+          yield {
+            candidates: [
+              { content: { parts: [{ text: 'Partial response...' }] } },
+            ],
+          } as unknown as GenerateContentResponse;
+          throw error;
+        })(),
+      )
+      .mockImplementationOnce(async () =>
+        (async function* () {
+          yield {
+            candidates: [
+              { content: { parts: [{ text: 'Success after retry' }] } },
+              { finishReason: 'STOP' },
+            ],
+          } as unknown as GenerateContentResponse;
+        })(),
+      );
+
+    const stream = await chat.sendMessageStream(
+      { model: 'test-model' },
+      'test message',
+      'prompt-id-stream-error-retry',
+      new AbortController().signal,
+      LlmRole.MAIN,
+    );
+
+    const events: StreamEvent[] = [];
+    for await (const event of stream) {
+      events.push(event);
+    }
+
+    const successChunk = events.find(
+      (e) =>
+        e.type === StreamEventType.CHUNK &&
+        e.value.candidates?.[0]?.content?.parts?.[0]?.text ===
+          'Success after retry',
+    );
+    expect(successChunk).toBeDefined();
+    expect(mockContentGenerator.generateContentStream).toHaveBeenCalledTimes(2);
   });
 
   it('should retry on SSL error during stream iteration (mid-stream failure)', async () => {
